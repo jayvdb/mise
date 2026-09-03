@@ -231,6 +231,7 @@ cat <<EOF >mise.toml
 "apt:bc" = "latest"
 "dnf:bc" = "latest"
 "pacman:bc" = "latest"
+"zypper:bc" = "latest"
 EOF
 assert_succeed "mise bootstrap --dry-run"
 

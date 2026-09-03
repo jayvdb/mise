@@ -233,7 +233,7 @@ hero:
           chezmoi, and an Ansible playbook.
         </p>
         <ul class="landing-checklist">
-          <li>Packages through brew, apt, dnf, pacman, apk, and mas</li>
+          <li>Packages through brew, apt, dnf, pacman, zypper, apk, and mas</li>
           <li>Dotfiles as symlinks, copies, or templates, plus single-line edits</li>
           <li>Remote hosts over SSH with <code>mise bootstrap remote</code></li>
         </ul>

@@ -353,7 +353,7 @@ Things mise does **not** do:
 If a mise-installed tool needs a system library, install that library with your OS package
 manager first. You can declare those packages in
 [`[bootstrap.packages]`](/bootstrap/packages/) so `mise bootstrap` installs them: through
-apt/dnf/pacman where the platform's package manager owns them, or through mise's built-in
+apt/dnf/pacman/zypper where the platform's package manager owns them, or through mise's built-in
 Homebrew installers for `brew:` and `brew-cask:` entries, which do not require Homebrew
 itself. Either way they are host packages, not `[tools]` entries.
 

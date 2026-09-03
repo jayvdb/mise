@@ -8,6 +8,7 @@ cat <<EOF >mise.toml
 "dnf:bc" = "latest"
 "mas:497799835" = "latest"
 "pacman:bc" = "latest"
+"zypper:bc" = "latest"
 EOF
 
 # status renders on any platform; unavailable managers are skipped, not errors

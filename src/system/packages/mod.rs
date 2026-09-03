@@ -1,4 +1,4 @@
-//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, mas) for the `[bootstrap.packages]` config section.
+//! Host package managers (apk, apt, aur, brew, brew-cask, dnf, flatpak, flatpak-user, mas, pacman, zypper) for the `[bootstrap.packages]` config section.
 //!
 //! These are host-owned, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
@@ -20,6 +20,8 @@ pub(crate) mod flatpak;
 pub(crate) mod mas;
 pub(crate) mod pacman;
 pub(crate) mod plugin;
+pub(crate) mod rpm;
+pub(crate) mod zypper;
 
 /// A single package entry from `[bootstrap.packages]` — the part after the
 /// `manager:` prefix of a `"manager:package" = "version"` config entry.
@@ -30,7 +32,7 @@ pub(crate) struct PackageRequest {
     pub name: String,
     /// version pin from the config value (`"latest"` parses to None). Each
     /// manager renders this into its native pin syntax at install time
-    /// (apt: `name=version`, dnf: `name-version`).
+    /// (apt: `name=version`, dnf: `name-version`, zypper: `name=version`).
     pub version: Option<String>,
     /// manager-specific source URL. Currently used by brew tapped formulae
     /// and casks: `[bootstrap.brew.taps]` can attach a git URL to
@@ -251,6 +253,7 @@ pub(crate) fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         Arc::new(flatpak::FlatpakManager::new_user()),
         Arc::new(mas::MasManager::new()),
         Arc::new(pacman::PacmanManager::new()),
+        Arc::new(zypper::ZypperManager::new()),
     ]
 }
 

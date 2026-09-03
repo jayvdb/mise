@@ -604,6 +604,7 @@ fn install_prefix(mgr: &str) -> &'static str {
         "apt" => "sudo apt-get install -y ",
         "dnf" => "sudo dnf install -y ",
         "pacman" => "sudo pacman -S ",
+        "zypper" => "sudo zypper --non-interactive install ",
         "apk" => "sudo apk add ",
         "mas" => "mas install ",
         _ => "",

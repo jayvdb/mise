@@ -363,6 +363,33 @@ jobs:
       - name: Converge a complete Linux host over SSH
         run: scripts/test-bootstrap-linux-host.sh target/debug/mise
 
+  zypper-e2e:
+    name: zypper-e2e
+    permissions:
+      contents: read
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
+    timeout-minutes: 20
+    needs: [build-ubuntu, classify-changes]
+    if: needs.classify-changes.outputs.full-ci == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: mise-ubuntu-latest
+          path: target/debug
+      - run: chmod +x target/debug/mise
+      # The shared e2e image is Ubuntu, so test_system_install_zypper_slow's
+      # guard makes it a no-op in the regular tranches. Point the same harness
+      # at a real openSUSE image so the manager runs against the package
+      # manager it drives: installs, pins, removal, and zypper's exit codes.
+      # run_test is invoked directly because run_all_tests, not run_test, is
+      # what filters _slow tests out.
+      - name: e2e against openSUSE Tumbleweed
+        env:
+          MISE_E2E_DOCKER: "1"
+          MISE_E2E_DOCKER_IMAGE: opensuse/tumbleweed@sha256:4d1645373c02ce3b53118d0a0e75be6dccf5df95c2f0f268441112cdcb172cb3
+        run: ./e2e/run_test cli/test_system_install_zypper_slow
+
   windows-unit:
     runs-on: windows-latest
     timeout-minutes: 40
@@ -431,6 +458,7 @@ jobs:
       - lint
       - e2e
       - bootstrap-linux-host
+      - zypper-e2e
       - windows-unit
       - windows-e2e
     # Evaluate skipped and failed dependencies, but do not waste a runner when
@@ -474,6 +502,10 @@ jobs:
               echo "bootstrap-linux-host failed or was skipped"
               exit 1
             fi
+            if [ "${{ needs.zypper-e2e.result }}" != "success" ]; then
+              echo "zypper-e2e failed or was skipped"
+              exit 1
+            fi
             if [ "${{ needs.windows-unit.result }}" != "success" ]; then
               echo "windows-unit failed or was skipped"
               exit 1
@@ -488,6 +520,7 @@ jobs:
               "${{ needs.unit.result }}" \
               "${{ needs.e2e.result }}" \
               "${{ needs.bootstrap-linux-host.result }}" \
+              "${{ needs.zypper-e2e.result }}" \
               "${{ needs.windows-unit.result }}" \
               "${{ needs.windows-e2e.result }}"; do
               if [ "$result" != "skipped" ]; then

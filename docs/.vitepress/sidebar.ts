@@ -117,6 +117,7 @@ export const sidebar: SidebarItem[] = [
           { text: "AUR", link: "/bootstrap/packages/aur" },
           { text: "dnf", link: "/bootstrap/packages/dnf" },
           { text: "pacman", link: "/bootstrap/packages/pacman" },
+          { text: "zypper", link: "/bootstrap/packages/zypper" },
           { text: "brew", link: "/bootstrap/packages/brew" },
           { text: "mas", link: "/bootstrap/packages/mas" },
           {

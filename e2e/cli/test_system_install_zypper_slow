@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+# e2e:writable-rootfs — installing an rpm writes to /var and /usr, which the
+# e2e Docker sandbox mounts read-only by default
+
+# requires a SUSE-family Linux running as root. CI gets one from the zypper-e2e
+# job in .github/workflows/test-impl.yml, which runs this test against a real
+# openSUSE image; everywhere else this test is a no-op. Marked _slow because a
+# real zypper transaction takes over 20s.
+if [[ "$(uname)" != "Linux" ]] || ! command -v zypper >/dev/null || [[ "$(id -u)" != 0 ]]; then
+  exit 0
+fi
+
+write_config() {
+  printf '[bootstrap.packages]\n%s\n' "$1" >mise.toml
+}
+
+write_config '"zypper:bc" = "latest"'
+
+zypper --non-interactive remove bc >/dev/null 2>&1 || true
+
+assert_contains "mise bootstrap packages status" "missing"
+assert_fail "mise bootstrap packages status --missing"
+
+# dry-run prints the command without installing
+assert_contains "mise bootstrap packages apply --dry-run" "zypper --non-interactive install bc"
+assert_contains "mise bootstrap packages status" "missing"
+
+# explicit manager:package specs work, configured or not
+assert_contains "mise bootstrap packages apply zypper:bc --dry-run" "zypper --non-interactive install bc"
+
+mise bootstrap packages apply --yes
+assert_contains "mise bootstrap packages status" "installed"
+assert_succeed "mise bootstrap packages status --missing"
+assert_succeed "bc --version"
+
+# second apply is a no-op
+assert_contains "mise bootstrap packages apply --yes 2>&1" "already installed"
+
+# upgrade refreshes metadata first, then re-resolves the best candidate.
+# `zypper install` is used rather than `zypper update` because it is the only
+# invocation that can honor a version pin.
+assert_contains "mise bootstrap packages upgrade --dry-run" "zypper --non-interactive refresh"
+assert_contains "mise bootstrap packages upgrade --dry-run" "zypper --non-interactive install bc"
+assert_succeed "mise bootstrap packages upgrade --yes"
+assert_contains "mise bootstrap packages status" "installed"
+
+# a pin renders to zypper's native name=version capability syntax, with
+# --oldpackage so it can move backwards from a newer installed version
+write_config '"zypper:bc" = "0.0.1"'
+assert_contains "mise bootstrap packages status" "version mismatch"
+assert_contains "mise bootstrap packages apply --dry-run" \
+  "zypper --non-interactive install --oldpackage bc=0.0.1"
+# zypper exits 104 for a capability it cannot resolve. That is not one of the
+# informational exit codes mise accepts as success, so this must fail.
+assert_fail "mise bootstrap packages apply --yes"
+
+# state = "absent" removes the package
+write_config '"zypper:bc" = { state = "absent" }'
+assert_contains "mise bootstrap packages apply --dry-run" "zypper --non-interactive remove bc"
+assert_succeed "rpm -q bc"
+mise bootstrap packages apply --yes
+assert_fail "rpm -q bc"
+
+# `use` writes the config entry and installs in one step
+rm mise.toml
+assert_succeed "mise bootstrap packages use --yes zypper:bc"
+assert_contains "cat mise.toml" '"zypper:bc" = "latest"'
+assert_contains "mise bootstrap packages status" "installed"
+assert_succeed "bc --version"

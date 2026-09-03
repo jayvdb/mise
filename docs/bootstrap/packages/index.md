@@ -17,6 +17,7 @@ mise can ensure host packages are installed via the
 "flatpak:org.mozilla.firefox" = "latest"
 "flatpak-user:org.gnome.Builder" = "latest"
 "mas:497799835" = "latest"
+"zypper:libopenssl-devel" = "latest"
 ```
 
 Each entry is keyed `"manager:package"` — the manager prefix is required —
@@ -37,7 +38,8 @@ aliases as `[tools]` (`linux`, `macos`, `windows`, `linux/x64`,
 "pacman:libreoffice-fresh" = { state = "absent" }
 ```
 
-`pacman` entries may set `state = "absent"` to declaratively remove a package.
+`pacman` and `zypper` entries may set `state = "absent"` to declaratively
+remove a package.
 `mise bootstrap packages status --missing` treats an installed package with
 that declaration as drift, and `mise bootstrap packages apply` removes it.
 Other built-in managers currently support only the default `state = "present"`.
@@ -85,6 +87,7 @@ declarative sections work the same way:
 | `flatpak`      | Linux with the `flatpak` CLI on `PATH` (system scope)          | [Flatpak](/bootstrap/packages/flatpak.html)         |
 | `flatpak-user` | Linux with the `flatpak` CLI on `PATH` (user scope)            | [Flatpak](/bootstrap/packages/flatpak.html)         |
 | `mas`          | macOS with the `mas` CLI on `PATH`                             | [mas](/bootstrap/packages/mas.html)                 |
+| `zypper`       | openSUSE Leap, openSUSE Tumbleweed, SLES                       | [zypper](/bootstrap/packages/zypper.html)           |
 | plugin         | Declared by the plugin                                         | [Package plugins](/bootstrap/packages/plugins.html) |
 
 ## Semantics
@@ -199,7 +202,7 @@ ownership state.
 
 `mise bootstrap packages upgrade` refreshes package manager metadata and upgrades the
 configured packages that are already installed to the newest available
-version — apk, apt, and dnf also honor a version pinned in config
+version — apk, apt, dnf, and zypper also honor a version pinned in config
 ([AUR](/bootstrap/packages/aur.html), [pacman](/bootstrap/packages/pacman.html),
 brew, brew-cask, flatpak, flatpak-user, and mas can't install pins, so
 pinned entries are skipped with a warning). Packages that aren't installed

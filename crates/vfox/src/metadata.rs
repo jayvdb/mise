@@ -21,7 +21,7 @@ pub struct Metadata {
 /// A single `PLUGIN.systemDependencies` entry — a system prerequisite the
 /// plugin needs before it can install (build tools, libraries, ...). Exactly
 /// one of `bin`/`pkgconfig`/`sharedlib`/`command` must be set; `packages` maps
-/// a package-manager name (brew, apt, dnf, pacman, apk) to the package that
+/// a package-manager name (brew, apt, dnf, pacman, zypper, apk) to the package that
 /// provides the capability, used only as a remediation hint.
 ///
 /// A hint may list several candidate package names for one manager — the same

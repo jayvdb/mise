@@ -9,7 +9,7 @@
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
-use eyre::bail;
+use eyre::{WrapErr, bail};
 
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
@@ -92,6 +92,20 @@ fn pause_progress_for_child() -> Option<ProgressPauseGuard> {
     MultiProgressReport::try_get().map(|report| report.pause_progress())
 }
 
+/// The copy-pasteable `sudo ...` command to run by hand when mise cannot
+/// elevate itself. Includes the env vars the automated path would have set
+/// (e.g. `DEBIAN_FRONTEND=noninteractive`).
+fn manual_command(program: &str, args: &[String], envs: &[(String, String)]) -> String {
+    let mut manual = vec!["sudo".to_string()];
+    if !envs.is_empty() {
+        manual.push("env".to_string());
+        manual.extend(envs.iter().map(|(k, v)| format!("{k}={v}")));
+    }
+    manual.push(program.to_string());
+    manual.extend(args.iter().cloned());
+    manual.join(" ")
+}
+
 /// Run `program args...`, elevating with sudo when not running as root.
 ///
 /// - root: runs the command directly (containers/CI)
@@ -102,17 +116,7 @@ fn pause_progress_for_child() -> Option<ProgressPauseGuard> {
 /// - `system_packages.sudo = false`: never elevates; errors if not root
 pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> Result<()> {
     let argv = argv_with_env(program, args, envs);
-    // the copy-pasteable fallback must include the env vars the automated
-    // path would have set (e.g. DEBIAN_FRONTEND=noninteractive)
-    let mut manual = vec!["sudo".to_string()];
-    if !envs.is_empty() {
-        manual.push("env".to_string());
-        manual.extend(envs.iter().map(|(k, v)| format!("{k}={v}")));
-    }
-    manual.push(program.to_string());
-    manual.extend(args.iter().cloned());
-    let manual_cmd = manual.join(" ");
-    ensure_elevation_available(&manual_cmd)?;
+    ensure_elevation_available(&manual_command(program, args, envs))?;
     let _progress_pause = pause_progress_for_child();
     info!("$ {}", argv.join(" "));
     let mut cmd = CmdLineRunner::new(&argv[0]);
@@ -125,6 +129,45 @@ pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> 
     // inherited stdio: sudo password prompts and apt progress go straight to
     // the user's terminal
     cmd.raw(true).execute()
+}
+
+/// Like [`run`], but also treat the given non-zero exit codes as success.
+///
+/// Some package managers signal informational conditions with a non-zero exit
+/// code even when the requested transaction committed — zypper, for instance,
+/// exits 102 when the new packages need a reboot to take effect. Only codes a
+/// caller has established mean success belong here; everything else still
+/// fails.
+///
+/// Elevation policy, logging, and stdio inheritance are identical to [`run`].
+pub(crate) fn run_with_ok_codes(
+    program: &str,
+    args: &[String],
+    envs: &[(String, String)],
+    ok_codes: &[i32],
+) -> Result<()> {
+    let argv = argv_with_env(program, args, envs);
+    ensure_elevation_available(&manual_command(program, args, envs))?;
+    let _progress_pause = pause_progress_for_child();
+    info!("$ {}", argv.join(" "));
+    let mut cmd = Command::new(&argv[0]);
+    cmd.args(&argv[1..]);
+    for (k, v) in envs {
+        cmd.env(k, v);
+    }
+    // inherited stdio, as in `run`: sudo password prompts and the manager's
+    // own progress output go straight to the user's terminal
+    let status = cmd
+        .status()
+        .wrap_err_with(|| format!("failed to execute command: {}", argv.join(" ")))?;
+    if status.success() || status.code().is_some_and(|code| ok_codes.contains(&code)) {
+        return Ok(());
+    }
+    bail!(
+        "{} failed: exit code {}",
+        argv.join(" "),
+        status.code().unwrap_or(-1)
+    );
 }
 
 /// Run `program args...` elevated, with the child's working directory bound to
@@ -148,15 +191,8 @@ pub(crate) fn run_in_dir<Fd: std::os::fd::AsFd>(
     use std::os::fd::AsRawFd;
     use std::os::unix::process::CommandExt;
 
-    use eyre::WrapErr;
-
     let argv = argv_with_env(program, args, &[]);
-    let manual_cmd = std::iter::once("sudo".to_string())
-        .chain(std::iter::once(program.to_string()))
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ");
-    ensure_elevation_available(&manual_cmd)?;
+    ensure_elevation_available(&manual_command(program, args, &[]))?;
     let _progress_pause = pause_progress_for_child();
     info!("$ {}", argv.join(" "));
     let raw = dir.as_fd().as_raw_fd();
@@ -189,14 +225,7 @@ pub(crate) fn run_in_dir<Fd: std::os::fd::AsFd>(
 /// callers retain [`ensure_elevation_available`]'s fail-fast `sudo -n` check.
 pub(crate) fn output(program: &str, args: &[String], envs: &[(String, String)]) -> Result<Output> {
     let argv = argv_with_env(program, args, envs);
-    let manual_cmd = std::iter::once("sudo".to_string())
-        .chain((!envs.is_empty()).then_some("env".to_string()))
-        .chain(envs.iter().map(|(key, value)| format!("{key}={value}")))
-        .chain(std::iter::once(program.to_string()))
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ");
-    ensure_elevation_available(&manual_cmd)?;
+    ensure_elevation_available(&manual_command(program, args, envs))?;
     if !is_root() && Settings::get().system_packages.sudo && console::user_attended_stderr() {
         let _progress_pause = pause_progress_for_child();
         CmdLineRunner::new("sudo").arg("-v").raw(true).execute()?;
@@ -214,12 +243,7 @@ pub(crate) fn output(program: &str, args: &[String], envs: &[(String, String)]) 
 /// fallback. This is the transport used for typed privileged bootstrap plans.
 pub(crate) fn run_with_input(program: &str, args: &[String], input: &[u8]) -> Result<()> {
     let argv = argv(program, args);
-    let manual_cmd = std::iter::once("sudo".to_string())
-        .chain(std::iter::once(program.to_string()))
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ");
-    ensure_elevation_available(&manual_cmd)?;
+    ensure_elevation_available(&manual_command(program, args, &[]))?;
     let _progress_pause = pause_progress_for_child();
     info!("$ {}", argv.join(" "));
     let mut child = Command::new(&argv[0])
@@ -248,12 +272,7 @@ pub(crate) fn run_with_input_output(
     input: &[u8],
 ) -> Result<Vec<u8>> {
     let argv = argv(program, args);
-    let manual_cmd = std::iter::once("sudo".to_string())
-        .chain(std::iter::once(program.to_string()))
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ");
-    ensure_elevation_available(&manual_cmd)?;
+    ensure_elevation_available(&manual_command(program, args, &[]))?;
     let _progress_pause = pause_progress_for_child();
     info!("$ {}", argv.join(" "));
     let mut child = Command::new(&argv[0])
